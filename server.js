@@ -16,7 +16,10 @@ app.get('/login/:userId', (req, res) => {
 
 app.get('/account/:id', (req, res) => {
   if (!req.session.userId) return res.status(401).send('login required');
-  res.json(accounts[req.params.id]); // IDOR: returns any account, never checks req.session.userId === req.params.id
+  const account = accounts[req.params.id];
+  if (!account) return res.status(404).send('not found');
+  if (account.owner !== req.session.userId) return res.status(403).send('forbidden');
+  res.json(account);
 });
 
 app.listen(3000, () => console.log('listening on 3000'));
