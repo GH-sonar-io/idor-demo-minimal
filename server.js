@@ -11,6 +11,7 @@ const accounts = {
 
 app.get('/login/:userId', (req, res) => {
   req.session.userId = req.params.userId;
+  res.set('Content-Type', 'text/plain');
   res.send('logged in as ' + req.params.userId);
 });
 
