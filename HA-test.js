@@ -1,17 +1,15 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
+
 const app = express();
 app.use(express.json());
 
-// Demo authentication: every request is an authenticated non-admin.
-// Real authentication is deliberately outside this example's scope.
-app.use((req, res, next) => {
-  req.user = { id: "alice", role: "customer" };
-  next();
-});
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+const COUPONS = { WELCOME20: 0.8 };
 
 const invoices = {
-  "inv-100": { ownerId: "alice", amount: 100 },
-  "inv-200": { ownerId: "bob", amount: 900, bankAccount: "BOB-PRIVATE" },
+  "inv-100": { ownerId: "alice", amount: 100, status: "paid" },
+  "inv-200": { ownerId: "bob", amount: 900, status: "paid", bankAccount: "DE89370400440532013000" },
 };
 
 const orders = {
@@ -25,55 +23,66 @@ const orders = {
 };
 
 const users = {
-  alice: { role: "customer" },
-  bob: { role: "customer" },
+  alice: { role: "customer", email: "alice@example.com" },
+  bob: { role: "customer", email: "bob@example.com" },
 };
 
-// Finding 1: IDOR — authenticated users must only read their own invoices.
+function authenticate(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Missing token" });
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = { id: payload.sub, role: users[payload.sub]?.role };
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+app.use(authenticate);
+
 app.get("/invoices/:id", (req, res) => {
   const invoice = invoices[req.params.id];
   if (!invoice) return res.sendStatus(404);
 
-  // BUG: no comparison between invoice.ownerId and req.user.id.
   res.json(invoice);
 });
 
-// Finding 2: missing authorization — only admins may grant admin privileges.
 app.post("/admin/users/:id/promote", (req, res) => {
   const user = users[req.params.id];
   if (!user) return res.sendStatus(404);
 
-  // BUG: authentication alone is not an admin permission check.
   user.role = "admin";
   res.json(user);
 });
 
-// Finding 3: repeatable benefit — WELCOME20 may be used once per order.
 app.post("/orders/:id/coupon", (req, res) => {
   const order = orders[req.params.id];
   if (!order) return res.sendStatus(404);
   if (order.ownerId !== req.user.id) return res.sendStatus(403);
-  if (req.body.code !== "WELCOME20") {
+
+  const discount = COUPONS[req.body.code];
+  if (!discount) {
     return res.status(400).json({ error: "Invalid coupon" });
   }
 
-  // BUG: couponUsed is recorded but never checked before applying again.
-  order.total *= 0.8;
+  order.total *= discount;
   order.couponUsed = true;
   res.json(order);
 });
 
-// Finding 4: workflow bypass — payment must complete before fulfillment.
 app.post("/orders/:id/fulfill", (req, res) => {
   const order = orders[req.params.id];
   if (!order) return res.sendStatus(404);
   if (order.ownerId !== req.user.id) return res.sendStatus(403);
 
-  // BUG: no check that paymentStatus === "paid".
   order.status = "fulfilled";
   res.json(order);
 });
 
-app.listen(3000, "127.0.0.1", () => {
-  console.log("Vulnerable demo: http://127.0.0.1:3000");
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Billing API listening on port ${port}`);
 });
