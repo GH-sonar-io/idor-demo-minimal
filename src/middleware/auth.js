@@ -12,6 +12,7 @@ function authenticate(req, res, next) {
     req.user = { id: payload.sub, role: users[payload.sub]?.role };
     next();
   } catch (err) {
+    console.warn(`Token verification failed: ${err.message}`);
     res.status(401).json({ error: "Invalid token" });
   }
 }
