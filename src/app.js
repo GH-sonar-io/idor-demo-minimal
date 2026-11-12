@@ -2,6 +2,7 @@ const express = require("express");
 const { authenticate } = require("./middleware/auth");
 
 const app = express();
+app.disable("x-powered-by");
 app.use(express.json());
 app.use(authenticate);
 
